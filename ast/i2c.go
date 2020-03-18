@@ -71,6 +71,16 @@ func (a *AstHandle) I2cDev(busno, slave int) i2c.Dev {
 		bus.m.Write32(bus.base+0, 0)
 		time.Sleep(100 * time.Millisecond)
 	}
+	if busno >= 2 && busno <= 13 {
+		scuBit := uint32(1) << uint(busno+16-2)
+		if a.scu.Read32(0x90)&scuBit == 0 {
+			a.scu.Write32(0x90, a.scu.Read32(0x90)|scuBit)
+			log.Printf("i2c %d pins were disabled, enabling...\n", busno)
+		}
+	}
+	if bus.m.Read32(bus.base+0x14) != 0x0a060000 {
+		log.Fatalf("Cannot initialize i2c, cmd = 0x%08x\n", bus.m.Read32(bus.base+0x14))
+	}
 	bus.m.Write32(bus.base, 1) // enable master func
 	return i2c.Dev{Bus: bus, Addr: uint16(slave)}
 }

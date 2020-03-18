@@ -23,7 +23,7 @@ func idt_eeread(dev i2c.Dev, addr uint32) byte {
 	tx := []byte{0x47, 4, 1, 0, byte(addr % 256), byte(addr / 256)}
 	err := dev.Tx(tx, nil)
 	if err != nil {
-		log.Fatalf("idt_eeread:query-phase:%d\n", err)
+		log.Fatalf("idt_eeread:query-phase:%s\n", err)
 	}
 	var rbuf [8]byte
 	err = dev.Tx([]byte{0x47}, rbuf[:])
