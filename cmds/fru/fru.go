@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"regexp"
 	"strconv"
+	"time"
 )
 
 type Hdr struct {
@@ -28,16 +29,19 @@ type Chassis struct {
 }
 
 type Board struct {
-	Mfg, Name, Sn, Part string
+	Mfg, Name, Sn, Part, FruID string
 }
 
 type Product struct {
-	Mfg, Name, Part, Version, Serial, Tag string
+	Mfg, Name, Part, Version, Serial, Tag, FruID string
 }
 
 func tlv(bufp *[]byte) string {
 	buf := *bufp
 	b := buf[0]
+	if buf[0] == 0xc1 {
+		return "INVALID:MISSING-STRING"
+	}
 	if b&0xc0 != 0xc0 {
 		log.Printf("Not ascii code: 0x%x\n", b)
 	}
@@ -102,6 +106,13 @@ func main() {
 	if len(buf) <= binary.Size(hdr) {
 		log.Fatalf("%s: File too small (%d) for fru\n", *fName, len(buf))
 	}
+	var sum uint8
+	for i := 0; i < 8; i++ {
+		sum += buf[i]
+	}
+	if sum != 0 {
+		fmt.Printf("WARNING: header checksum is: 0x%02x\n", sum)
+	}
 	binary.Read(bytes.NewReader(buf), binary.LittleEndian, &hdr)
 	fmt.Printf("Hdr=%#v\n", hdr)
 
@@ -109,6 +120,10 @@ func main() {
 		Area(&Chassis{}, buf[hdr.Chassis*8:], 3)
 	}
 	if hdr.Board != 0 {
+		var b [4]byte
+		copy(b[:], buf[hdr.Board*8+3:hdr.Board*8+6])
+		dateint := binary.LittleEndian.Uint32(b[:])
+		fmt.Printf("Mfg date:%s\n", time.Unix(820483200 + int64(dateint) * 60, 0))
 		Area(&Board{}, buf[hdr.Board*8:], 6)
 	}
 	if hdr.Product != 0 {
