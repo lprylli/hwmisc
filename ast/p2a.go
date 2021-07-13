@@ -118,21 +118,6 @@ func (m *AstMem) Mem() []byte {
 	panic("oops")
 }
 
-func arch() string {
-	//uts := &syscall.Utsname{}
-	//if err := syscall.Uname(uts); err != nil {
-	//	log.Fatal(err)
-	//}
-	//b := make([]byte, len(uts.Machine))
-	//for i, v := range uts.Machine {
-	//	b[i] = byte(v)
-	//}
-	//str := string(b)
-	//str = strings.Split(str,"\x00")[0]
-	//return str
-	return "x86"
-}
-
 func Map(name string, hwaddr int64, write bool, ioLen int64) pmem.Region {
 	if ioLen == 0 {
 		ioLen = 4096
