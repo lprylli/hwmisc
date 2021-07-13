@@ -221,9 +221,8 @@ func main() {
 		if write {
 			b := make([]byte, ioLen)
 			ReadFull(os.Stdin, b)
-			// copy via 64bytes ops
-			for i := int64(0); i < ioLen; i += 8 {
-				enc.PutUint64(data.Mem()[off+i:], enc.Uint64(b[i:]))
+			for i := int64(0); i < ioLen; i += 4 {
+				data.Write32(off + i, enc.Uint32(b[i:]))
 			}
 		} else {
 			out := bufio.NewWriter(os.Stdout)
