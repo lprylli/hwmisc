@@ -2,11 +2,10 @@ package ast
 
 import (
 	"fmt"
-	"log"
-	"sync"
-
 	"github.com/lprylli/hwmisc/pci"
 	"github.com/lprylli/hwmisc/pmem"
+	"log"
+	"sync"
 )
 
 type p2aHandle struct {

@@ -17,6 +17,7 @@ type AstHandle struct {
 	wdt      pmem.Region
 	lpc      pmem.Region
 	dram     pmem.Region
+	mac      [2]pmem.Region
 	Ast2500  bool
 	ThisIsMe bool // true if program is running on AST itself
 }
@@ -28,6 +29,9 @@ func New() *AstHandle {
 	a.wdt = Map("wdt", WDT_ADDR, true, 4096)
 	a.I2c = Map("i2c", I2C_ADDR, true, 4096)
 	a.lpc = Map("lpc", LPC_ADDR, true, 4096)
+	a.mac[0] = Map("mac0", MAC0_ADDR, true, 4096)
+	a.mac[1] = Map("mac1", MAC1_ADDR, true, 4096)
+
 	a.ThisIsMe = (arch() == "armv6l")
 	return &a
 }

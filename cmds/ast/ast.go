@@ -259,6 +259,7 @@ func main() {
 	var spiRead, spiWrite, spiEnv string
 	var spiOff, spiLen int64
 	var i2cMon int
+	var mii bool
 	flag.BoolVar(&astReset, "reset", false, "Reset AST chip")
 	flag.BoolVar(&ast.NoWrite, "noop", false, "Fake AST writes")
 	flag.BoolVar(&ast.Verbose, "verbose", false, "Output each individual ast writes")
@@ -273,6 +274,7 @@ func main() {
 	flag.StringVar(&spiEnv, "spienv", "", "env vars to write to flash (comma separated)")
 	flag.IntVar(&i2cMon, "i2cmon", -2, "i2c bus to monitor (-1 == all)")
 	flag.BoolVar(&i2cMonRaw, "i2cmonraw", false, "raw gpio mon for i2c")
+	flag.BoolVar(&mii, "mii", false, "info about mii")
 
 	flag.Parse()
 	chip, step := ast.AstInfo()
@@ -283,6 +285,9 @@ func main() {
 		a = ast.New()
 	}
 
+	if mii {
+		a.MiiInfo()
+	}
 	if i2c3Speed {
 		a.AstI2c3Speed()
 	}
