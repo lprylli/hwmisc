@@ -256,6 +256,7 @@ func doI2cMon(bus int) {
 func main() {
 	var astReset bool
 	var i2c3Speed, i2c3Disable bool
+	var spiInfo bool
 	var spiRead, spiWrite, spiEnv string
 	var spiOff, spiLen int64
 	var i2cMon int
@@ -267,6 +268,8 @@ func main() {
 	flag.BoolVar(&ast.LpcReset, "lpc", false, "with -reset, also reset LPC")
 	flag.BoolVar(&i2c3Speed, "i2c3", false, "continuously monitor/adjust i2c speed for bus-3")
 	flag.BoolVar(&i2c3Disable, "i2c3dis", false, "continuously monitor/disable i2c bus-3")
+	flag.BoolVar(&spiInfo, "spiinfo", false, "display spi info for bmc")
+	flag.BoolVar(&ast.Mode4B, "spi4b", true, "enable 4B mode for spi (dflt)")
 	flag.StringVar(&spiRead, "spiread", "", "file where to store flash contents")
 	flag.Int64Var(&spiOff, "spioff", 0, "flash offset to read or write")
 	flag.Int64Var(&spiLen, "spilen", -1, "size to read write")
@@ -287,6 +290,9 @@ func main() {
 
 	if mii {
 		a.MiiInfo()
+	}
+	if spiInfo {
+		a.SpiInfo()
 	}
 	if i2c3Speed {
 		a.AstI2c3Speed()

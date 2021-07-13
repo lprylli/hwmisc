@@ -271,13 +271,13 @@ var spiReg = `
 
 var spiRegs = ParseRegs(spiReg)
 
-func SpiInfo() {
-	spi := Map("spi", FMC_ADDR, true, 4096)
-	chip, _ := AstInfo()
-	if chip != "2500" {
-		log.Printf("Only accept AST2500, chip=%s\n", chip)
+func (a *AstHandle) SpiInfo() {
+	spi := Map("fmc", FMC_ADDR, true, 4096)
+	if !a.Ast2500 {
+		log.Printf("Only accept AST2500\n")
 		return
 	}
+	//fmt.Printf("spiid = 0x%06x\n", fmc.spiId())
 	fmc0 := spi.Read32(0)
 	fmcA0 := spi.Read32(0xa0)
 	fmt.Printf("spi0=0x%x, writable=%d filter=%d\n", fmc0, bit(fmc0, 16), bit(fmcA0, 0))

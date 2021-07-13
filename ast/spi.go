@@ -8,6 +8,8 @@ import (
 	"github.com/lprylli/hwmisc/pmem"
 )
 
+var Mode4B bool = true
+
 type Fmc struct {
 	mem        *AstMem
 	reg        pmem.Region
@@ -44,10 +46,18 @@ func (fmc *Fmc) spiXfer(out []byte, inSize int64) []byte {
 }
 
 func (fmc *Fmc) spiXferAddr(cmd byte, off uint32, extra []byte, inSize int64) []byte {
-	out := make([]byte, 5+len(extra))
-	out[0] = cmd
-	binary.BigEndian.PutUint32(out[1:], uint32(off))
-	copy(out[5:], extra)
+	var out []byte
+	if Mode4B {
+		out = make([]byte, 5+len(extra))
+		binary.BigEndian.PutUint32(out[1:], uint32(off))
+		out[0] = cmd
+		copy(out[5:], extra)
+	} else {
+		out = make([]byte, 4+len(extra))
+		binary.BigEndian.PutUint32(out[0:], uint32(off))
+		out[0] = cmd
+		copy(out[4:], extra)
+	}
 	return fmc.spiXfer(out, inSize)
 }
 
@@ -74,6 +84,9 @@ func (fmc *Fmc) spiStatus() uint8 {
 
 func (fmc *Fmc) spi4B() {
 	_ = fmc.spiXfer([]byte{0xB7}, 0)
+}
+func (fmc *Fmc) spi3B() {
+	_ = fmc.spiXfer([]byte{0xE9}, 0)
 }
 
 // Reads SPI-ID
@@ -138,11 +151,22 @@ func (a *AstHandle) FmcNew() *Fmc {
 		ce0CtlFast: 0x600,
 		Size:       32 * 1024 * 1024,
 	}
-	if id := fmc.spiId(); id != 0xc22019 {
+	id := fmc.spiId()
+	switch id {
+	case 0xc22019:
+	case 0x20ba20:
+		/* nothing */
+	case 0xc2201a:
+		fmc.Size = 64 * 1024 * 1024
+	default:
 		log.Fatalf("SpiId:0x%06x unknown!!\n", id)
 
 	}
-	fmc.reg.Write32(0x04, 0x701)
+	if Mode4B {
+		fmc.reg.Write32(0x04, 0x701)
+	} else {
+		fmc.reg.Write32(0x04, 0x700)
+	}
 	stat := fmc.spiStatus()
 	if stat&^2 != 0 {
 		log.Fatalf("SpiStatus:0x%02x\n", stat)
@@ -150,6 +174,10 @@ func (a *AstHandle) FmcNew() *Fmc {
 	if stat&2 != 0 {
 		fmc.writeDisable()
 	}
-	fmc.spi4B()
+	if Mode4B {
+		fmc.spi4B()
+	} else {
+		fmc.spi3B()
+	}
 	return fmc
 }
