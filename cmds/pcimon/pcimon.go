@@ -105,6 +105,9 @@ func min(a, b int) int {
 func showLinks(world *pci.World, aer bool) []*PciDev {
 	var links []*PciDev
 	for _, d := range world.Devs {
+		if d.LnkChild != nil && verbose {
+			log.Printf("%s:%d:%d\n", d.Name, d.Ecap[pci.PCI_ECAP_ID_AER], d.LnkChild.Ecap[pci.PCI_ECAP_ID_AER])
+		}
 		// Exception for some AMD GPP root port not advertising AER (1022:1483), and blacklist internal pcie links (1022:1484)
 		upQual := (d.Ecap[pci.PCI_ECAP_ID_AER] > 0 && (d.Vendor != 0x1022 || d.Device != 0x1484)) || (!aer && d.Vendor == 0x1022 && d.Device == 0x1483)
 		if d.LnkChild != nil && upQual && d.LnkChild.Ecap[pci.PCI_ECAP_ID_AER] > 0 {
