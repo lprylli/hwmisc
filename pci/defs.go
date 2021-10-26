@@ -60,7 +60,7 @@ type BasePciDev struct {
 	LnkCapWidth    int
 	downPorts      int
 	nickname, Path string
-	vendor, device uint16
+	Vendor, Device uint16
 	App            interface{}
 }
 
@@ -121,9 +121,9 @@ func (w *World) AddDev(d *PciDev) {
 	d.w = w
 	d.reqId = d.bus*256 + d.devFn
 	d.devType = -1
-	d.vendor = d.Read16(0)
-	d.device = d.Read16(2)
-	if d.vendor == 0xffff && d.device == 0xffff {
+	d.Vendor = d.Read16(0)
+	d.Device = d.Read16(2)
+	if d.Vendor == 0xffff && d.Device == 0xffff {
 		log.Printf("%s: ignored (0xffff on id)\n", d.Name)
 		return
 	}
@@ -157,31 +157,31 @@ func (d *PciDev) InitNickName() {
 	switch {
 	case d.devType == PCI_CAP_EXP_TYPE_ROOT_PORT:
 		name = "ROOT"
-	case d.devType == PCI_CAP_EXP_TYPE_UPSTREAM && d.vendor == 0x8086:
+	case d.devType == PCI_CAP_EXP_TYPE_UPSTREAM && d.Vendor == 0x8086:
 		name = "ISW"
-	case d.devType == PCI_CAP_EXP_TYPE_UPSTREAM && d.vendor == 0x10b5:
+	case d.devType == PCI_CAP_EXP_TYPE_UPSTREAM && d.Vendor == 0x10b5:
 		name = "PLX"
-	case d.devType == PCI_CAP_EXP_TYPE_UPSTREAM && d.vendor == 0x11f8:
+	case d.devType == PCI_CAP_EXP_TYPE_UPSTREAM && d.Vendor == 0x11f8:
 		name = "RIMFIRE"
 	case d.devType == PCI_CAP_EXP_TYPE_DOWNSTREAM:
 		name = fmt.Sprintf("p%d", d.parent.downPorts)
 		d.parent.downPorts++
 		separator = ""
-	case d.devType == PCI_CAP_EXP_TYPE_ENDPOINT && d.vendor == 0x15b7:
+	case d.devType == PCI_CAP_EXP_TYPE_ENDPOINT && d.Vendor == 0x15b7:
 		name = "sandisk"
-	case d.devType == PCI_CAP_EXP_TYPE_ENDPOINT && d.vendor == 0x15b3 && d.devFn == 0:
+	case d.devType == PCI_CAP_EXP_TYPE_ENDPOINT && d.Vendor == 0x15b3 && d.devFn == 0:
 		name = "MLX"
-	case d.devType == PCI_CAP_EXP_TYPE_PCI_BRIDGE && d.vendor == 0x1a03:
+	case d.devType == PCI_CAP_EXP_TYPE_PCI_BRIDGE && d.Vendor == 0x1a03:
 		name = "AST"
-	case d.devType == PCI_CAP_EXP_TYPE_ENDPOINT && d.vendor == 0x8086 && d.devClass == 0x0200:
+	case d.devType == PCI_CAP_EXP_TYPE_ENDPOINT && d.Vendor == 0x8086 && d.devClass == 0x0200:
 		name = "IETH"
-	case d.devType == PCI_CAP_EXP_TYPE_ENDPOINT && d.vendor == 0x1425 && d.devClass == 0x0200 && d.devFn == 0:
+	case d.devType == PCI_CAP_EXP_TYPE_ENDPOINT && d.Vendor == 0x1425 && d.devClass == 0x0200 && d.devFn == 0:
 		name = "CHL"
-	case d.devType == PCI_CAP_EXP_TYPE_ENDPOINT && d.vendor == 0x8086 && d.devClass == 0x0106:
+	case d.devType == PCI_CAP_EXP_TYPE_ENDPOINT && d.Vendor == 0x8086 && d.devClass == 0x0106:
 		name = "INTEL-SATA"
-	case d.devType == PCI_CAP_EXP_TYPE_ENDPOINT && d.vendor == 0x8086 && d.devClass == 0x0107:
+	case d.devType == PCI_CAP_EXP_TYPE_ENDPOINT && d.Vendor == 0x8086 && d.devClass == 0x0107:
 		name = "INTEL-SAS"
-	case d.devType == PCI_CAP_EXP_TYPE_ENDPOINT && d.vendor == 0x1000 && d.devClass == 0x0107:
+	case d.devType == PCI_CAP_EXP_TYPE_ENDPOINT && d.Vendor == 0x1000 && d.devClass == 0x0107:
 		name = "LSI-SAS"
 	}
 	if separator == "" {
@@ -213,7 +213,7 @@ func (d *PciDev) InitNickName() {
 
 func (w *World) FindById(vid uint16, did uint16) (l []*PciDev) {
 	for _, d := range w.Devs {
-		if d.vendor == vid && d.device == did {
+		if d.Vendor == vid && d.Device == did {
 			l = append(l, d)
 		}
 	}
@@ -230,7 +230,8 @@ func PciInit() *World {
 		if upDev != nil {
 			parentName = upDev.Name
 			d.parent = upDev
-			if d.devFn == 0 && (upDev.devType == PCI_CAP_EXP_TYPE_ROOT_PORT || upDev.devType == PCI_CAP_EXP_TYPE_DOWNSTREAM) {
+			if d.devFn == 0 && (upDev.devType == PCI_CAP_EXP_TYPE_ROOT_PORT || upDev.devType == PCI_CAP_EXP_TYPE_DOWNSTREAM) &&
+				(d.devType == PCI_CAP_EXP_TYPE_ENDPOINT || d.devType == PCI_CAP_EXP_TYPE_UPSTREAM) {
 				upDev.LnkChild = d
 			}
 		}

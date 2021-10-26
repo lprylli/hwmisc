@@ -102,10 +102,12 @@ func min(a, b int) int {
 	return b
 }
 
-func showLinks(world *pci.World) []*PciDev {
+func showLinks(world *pci.World, aer bool) []*PciDev {
 	var links []*PciDev
 	for _, d := range world.Devs {
-		if d.LnkChild != nil && d.Ecap[pci.PCI_ECAP_ID_AER] > 0 && d.LnkChild.Ecap[pci.PCI_ECAP_ID_AER] > 0 {
+		// Exception for some AMD GPP root port not advertising AER (1022:1483), and blacklist internal pcie links (1022:1484)
+		upQual := (d.Ecap[pci.PCI_ECAP_ID_AER] > 0 && (d.Vendor != 0x1022 || d.Device != 0x1484)) || (!aer && d.Vendor == 0x1022 && d.Device == 0x1483)
+		if d.LnkChild != nil && upQual && d.LnkChild.Ecap[pci.PCI_ECAP_ID_AER] > 0 {
 			d.GetSpeed()
 			c := d.LnkChild
 			c.GetSpeed()
@@ -131,7 +133,7 @@ func showLinks(world *pci.World) []*PciDev {
 }
 
 func monLinks(world *pci.World, nbIter int, delayNano time.Duration) {
-	links := showLinks(world)
+	links := showLinks(world, true)
 	var totalErrors int64
 	// The LinksWithErr map records whether any error was detected for a device
 	// in the previous iteration (to decide whether to include it in next high-frequency poll phase)
@@ -281,14 +283,14 @@ func Main() {
 		monLinks(world, *nbIter, time.Duration(*delayOpt*1e9))
 	}
 	if *errShowOpt {
-		errBrowse(world, false)
+		errBrowse(world, true)
 	}
 
 	if *clearErrOpt {
 		errBrowse(world, true)
 	}
 	if !*monLinkOpt && !*errShowOpt && !*clearErrOpt {
-		showLinks(world)
+		showLinks(world, false)
 	}
 }
 
