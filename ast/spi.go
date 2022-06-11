@@ -2,24 +2,47 @@ package ast
 
 import (
 	"encoding/binary"
+	"fmt"
+	"github.com/lprylli/hwmisc/pmem"
 	"log"
 	"time"
-
-	"github.com/lprylli/hwmisc/pmem"
 )
 
-var Mode4B bool = true
+var SpiMode int
 
-type Fmc struct {
-	mem        *AstMem
-	reg        pmem.Region
-	ce0CtlSlow uint32
-	ce0CtlFast uint32
-	Size       int64
+type spiChip struct {
+	name      string
+	Size      int64
+	EraseSize int64
+	op4b      bool
+	mx3b4b    bool
 }
 
+type Fmc struct {
+	mem                  *AstMem
+	reg                  pmem.Region
+	ce0CtlSlow           uint32
+	ce0CtlFast           uint32
+	id                   uint32
+	Chip                 spiChip
+	read, program, erase byte
+}
+
+const (
+	FREAD      = 0x0b
+	FREAD4B    = 0x0c
+	PPROGRAM   = 0x02
+	PPROGRAM4B = 0x12
+	ERASE      = 0xd8
+	ERASE4B    = 0xdc
+	BRRD       = 0x16
+	STATUS     = 0x05
+	RDCR       = 0x15
+	RFSR       = 0x70
+)
+
 func (f *Fmc) Sel(cmd byte) uint32 {
-	if cmd == 0x0b {
+	if cmd == FREAD || cmd == FREAD4B {
 		return f.ce0CtlFast
 	} else {
 		return f.ce0CtlSlow
@@ -31,6 +54,13 @@ func (fmc *Fmc) spiXfer(out []byte, inSize int64) []byte {
 	buf := make([]byte, inSize)
 	fmc.reg.Write32(FMC_CE0CTL, fmc.Sel(out[0])|0x0003)
 	firstBytes := len(out) & 3
+	var s string
+	if false {
+		for x := 0; x < len(out) && x < 10; x++ {
+			s += fmt.Sprintf("%02x ", out[x])
+		}
+		log.Printf("Spi: %s ...(out:%d in:%d)\n", s, len(out), inSize)
+	}
 	for x := 0; x < firstBytes; x++ {
 		fmc.mem.Write8(0, out[x])
 	}
@@ -47,20 +77,27 @@ func (fmc *Fmc) spiXfer(out []byte, inSize int64) []byte {
 
 func (fmc *Fmc) spiXferAddr(cmd byte, off uint32, extra []byte, inSize int64) []byte {
 	var out []byte
-	if Mode4B {
+	if SpiMode == 4 || cmd == FREAD4B || cmd == PPROGRAM4B || cmd == ERASE4B {
 		out = make([]byte, 5+len(extra))
 		binary.BigEndian.PutUint32(out[1:], uint32(off))
 		out[0] = cmd
 		copy(out[5:], extra)
-	} else {
+	} else if SpiMode == 3 && (cmd == FREAD || cmd == PPROGRAM || cmd == ERASE) {
+		if off&^0xffffff != 0 {
+			log.Fatalf("spiXferAddr3B (cmd=%#x, offset=%#x)\n", cmd, off)
+		}
 		out = make([]byte, 4+len(extra))
 		binary.BigEndian.PutUint32(out[0:], uint32(off))
 		out[0] = cmd
 		copy(out[4:], extra)
+	} else {
+		log.Fatalf("SpiXferAddr(cmd=%#x, offset=%#x): Unknown addr size (mode=%d)\n", cmd, off, SpiMode)
 	}
 	return fmc.spiXfer(out, inSize)
 }
 
+/*
+check fast-read config before reenable
 // Reads SPI using fast-read command.
 func (fmc *Fmc) SpiReadMapped(off, size int64) []byte {
 	var b = make([]byte, size)
@@ -71,22 +108,37 @@ func (fmc *Fmc) SpiReadMapped(off, size int64) []byte {
 	}
 	return b
 }
+*/
 
 // Reads SPI using ctl user-mode
 func (fmc *Fmc) SpiRead(off, size int64) []byte {
-	return fmc.spiXferAddr(0x0b, uint32(off), []byte{0}, size)
+	return fmc.spiXferAddr(fmc.read, uint32(off), []byte{0}, size)
 }
 
 func (fmc *Fmc) spiStatus() uint8 {
-	buf := fmc.spiXfer([]byte{5}, 4)
+	buf := fmc.spiXfer([]byte{STATUS}, 4)
 	return buf[0]
 }
 
 func (fmc *Fmc) spi4B() {
-	_ = fmc.spiXfer([]byte{0xB7}, 0)
+	switch {
+	case fmc.Chip.mx3b4b:
+		_ = fmc.spiXfer([]byte{0xB7}, 0)
+	case fmc.id == 0x010220:
+		_ = fmc.spiXfer([]byte{0x17, 0x80}, 0)
+	default:
+		log.Fatalf("don't know how to set spimode=4B on %#x\n", fmc.id)
+	}
 }
 func (fmc *Fmc) spi3B() {
-	_ = fmc.spiXfer([]byte{0xE9}, 0)
+	switch {
+	case fmc.Chip.mx3b4b:
+		_ = fmc.spiXfer([]byte{0xE9}, 0)
+	case fmc.id == 0x010220:
+		_ = fmc.spiXfer([]byte{0x17, 0x00}, 0)
+	default:
+		log.Fatalf("don't know how to set spimode=3B on %#x\n", fmc.id)
+	}
 }
 
 // Reads SPI-ID
@@ -117,7 +169,7 @@ func (f *Fmc) writeDisable() {
 
 func (f *Fmc) EraseBlock(off int64) {
 	f.writeEnable()
-	_ = f.spiXferAddr(0xd8, uint32(off), nil, 0)
+	_ = f.spiXferAddr(f.erase, uint32(off), nil, 0)
 	status := f.spiWait()
 	if status != 0 {
 		log.Fatalf("While erasing sector 0x%x:  status = 0x%02x", off, status)
@@ -132,13 +184,37 @@ func (f *Fmc) Write(off64 int64, buf []byte) {
 			chunk = len(buf)
 		}
 		f.writeEnable()
-		f.spiXferAddr(0x2, uint32(off), buf[0:chunk], 0)
+		f.spiXferAddr(f.program, uint32(off), buf[0:chunk], 0)
 		status := f.spiWait()
 		if status != 0 {
 			log.Fatalf("While Page Programming 0x%x:  status = 0x%02x", off, status)
 		}
 		buf = buf[chunk:]
 		off += chunk
+	}
+}
+
+var spiDb = map[uint32]spiChip{
+	0xc22019: {"mx25l25635f", 32 * 1024 * 1024, 64 * 1024, true, true},
+	0x20ba20: {"n25q512a", 64 * 1024 * 1024, 64 * 1024, true, true},
+	0xc2201a: {"mx66l51235l", 64 * 1024 * 1024, 64 * 1024, true, true},
+	0x010220: {"s25fl512s", 64 * 1024 * 1024, 256 * 1024, true, false},
+}
+
+func (f *Fmc) is4B() bool {
+	switch {
+	case f.id == 0x20ba20:
+		buf := f.spiXfer([]byte{RFSR}, 4)
+		return buf[0]&0x01 != 0
+	case f.id == 0x010220:
+		buf := f.spiXfer([]byte{BRRD}, 4)
+		return buf[0]&0x80 != 0
+	case f.Chip.mx3b4b:
+		buf := f.spiXfer([]byte{RDCR}, 4)
+		return buf[0]&0x20 != 0
+	default:
+		log.Fatalf("is4B: Unknown chip id: %#x\n", f.id)
+		return false
 	}
 }
 
@@ -149,23 +225,12 @@ func (a *AstHandle) FmcNew() *Fmc {
 		mem:        Map("fmc-mem", FMC_MEM, true, 64*1024*1024).(*AstMem),
 		ce0CtlSlow: 0x300,
 		ce0CtlFast: 0x600,
-		Size:       32 * 1024 * 1024,
 	}
-	id := fmc.spiId()
-	switch id {
-	case 0xc22019:
-	case 0x20ba20:
-		/* nothing */
-	case 0xc2201a:
-		fmc.Size = 64 * 1024 * 1024
-	default:
-		log.Fatalf("SpiId:0x%06x unknown!!\n", id)
-
-	}
-	if Mode4B {
-		fmc.reg.Write32(0x04, 0x701)
+	fmc.id = fmc.spiId()
+	if chip, ok := spiDb[fmc.id]; !ok {
+		log.Fatalf("SpiId:0x%06x unknown!!\n", fmc.id)
 	} else {
-		fmc.reg.Write32(0x04, 0x700)
+		fmc.Chip = chip
 	}
 	stat := fmc.spiStatus()
 	if stat&^2 != 0 {
@@ -174,10 +239,26 @@ func (a *AstHandle) FmcNew() *Fmc {
 	if stat&2 != 0 {
 		fmc.writeDisable()
 	}
-	if Mode4B {
-		fmc.spi4B()
+	if SpiMode != 0 {
+		switch SpiMode {
+		case 4:
+			fmc.spi4B()
+			fmc.reg.Write32(0x04, 0x701)
+		case 3:
+			fmc.spi3B()
+			fmc.reg.Write32(0x04, 0x700)
+		default:
+			log.Fatalf("Unknown spiMode:%d\n", SpiMode)
+		}
+	}
+	astIs4B := (fmc.reg.Read32(0x04) & 1) != 0
+	if astIs4B != fmc.is4B() {
+		log.Fatalf("astIs4B(%v) != fmc.is4B(%v)\n", astIs4B, fmc.is4B())
+	}
+	if fmc.Chip.op4b {
+		fmc.read, fmc.program, fmc.erase = FREAD4B, PPROGRAM4B, ERASE4B
 	} else {
-		fmc.spi3B()
+		fmc.read, fmc.program, fmc.erase = FREAD, PPROGRAM, ERASE
 	}
 	return fmc
 }

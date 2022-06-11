@@ -61,14 +61,14 @@ func doSpiWrite(spiWrite string, spiOff int64, spiLen int64, spiEnv string) {
 	} else if spiLen <= 0 {
 		spiLen = len64(buf)
 	}
-	if spiOff&0xffff != 0 {
-		log.Fatalf("Cannot write non-block aligned data to flash")
-	}
 	a := ast.New()
 	fmc := a.FmcNew()
-	for x := int64(0); x < spiLen; x += 0x10000 {
+	if spiOff&(fmc.Chip.EraseSize-1) != 0 {
+		log.Fatalf("Cannot write non-block aligned data to flash")
+	}
+	for x := int64(0); x < spiLen; x += fmc.Chip.EraseSize {
 		sec := x + spiOff
-		chunk := int64(0x10000)
+		chunk := int64(fmc.Chip.EraseSize)
 		if chunk > spiLen-x {
 			chunk = spiLen - x
 		}
@@ -269,7 +269,7 @@ func main() {
 	flag.BoolVar(&i2c3Speed, "i2c3", false, "continuously monitor/adjust i2c speed for bus-3")
 	flag.BoolVar(&i2c3Disable, "i2c3dis", false, "continuously monitor/disable i2c bus-3")
 	flag.BoolVar(&spiInfo, "spiinfo", false, "display spi info for bmc")
-	flag.BoolVar(&ast.Mode4B, "spi4b", true, "enable 4B mode for spi (dflt)")
+	flag.IntVar(&ast.SpiMode, "spimode", 0, "force spi chip in 3B or 4B mode")
 	flag.StringVar(&spiRead, "spiread", "", "file where to store flash contents")
 	flag.Int64Var(&spiOff, "spioff", 0, "flash offset to read or write")
 	flag.Int64Var(&spiLen, "spilen", -1, "size to read write")
@@ -313,7 +313,7 @@ func main() {
 	if spiRead != "" {
 		fmc := a.FmcNew()
 		if spiLen <= 0 {
-			spiLen = fmc.Size
+			spiLen = fmc.Chip.Size
 		}
 		buf := fmc.SpiRead(spiOff, spiLen)
 		err := ioutil.WriteFile(spiRead, buf, 0666)
