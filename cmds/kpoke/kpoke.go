@@ -141,13 +141,14 @@ func main() {
 		page := int64(mon) & PgMask
 		off := int64(mon) & (PgSize - 1)
 		m := mapFn("reg", page, false, 0)
-		pmem.MonLoop([]*pmem.Monitor{&pmem.Monitor{M: m, Off: off, Mask: 0}})
+		pmem.MonLoop([]*pmem.Monitor{{M: m, Off: off, Mask: 0}})
 	}
 	if i2cmon >= 0 {
-		base := ast.I2cBase(i2cmon)
+		a := ast.New()
+		base := a.I2cBase(i2cmon)
 		i2c := mapFn("i2c", 0x1e78a000, false, 0)
 		log.Printf("monitoring i2c bus %d: 0x%08x\n", i2cmon, 0x1e78a000+base)
-		pmem.MonLoopFun([]*pmem.Monitor{&pmem.Monitor{M: i2c, Off: base + 0x14, Mask: ^uint32(0x60000)}}, i2cDec, nil)
+		pmem.MonLoopFun([]*pmem.Monitor{{M: i2c, Off: base + 0x14, Mask: ^uint32(0x60000)}}, i2cDec, nil)
 	}
 	if astGpio {
 		astGpioMon()
@@ -222,7 +223,7 @@ func main() {
 			b := make([]byte, ioLen)
 			ReadFull(os.Stdin, b)
 			for i := int64(0); i < ioLen; i += 4 {
-				data.Write32(off + i, enc.Uint32(b[i:]))
+				data.Write32(off+i, enc.Uint32(b[i:]))
 			}
 		} else {
 			out := bufio.NewWriter(os.Stdout)

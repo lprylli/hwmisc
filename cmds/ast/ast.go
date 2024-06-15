@@ -224,7 +224,7 @@ func doI2cMon(bus int) {
 		}
 		if (bus == -1 || uint32(bus) == i) && i2cEnabled&(1<<i) != 0 && i2c.Read32(base+0) != 0 {
 			m := pmem.Monitor{M: i2c, Off: base}
-			if a.Ast2500 {
+			if a.Family >= 25 {
 				ctxt.poolBase = int64(0x200 + 16*i)
 			} else {
 				ctxt.poolBase = int64(0x800 + ((i2c.Read32(base)>>20)&7)*0x100)
@@ -284,7 +284,7 @@ func main() {
 	fmt.Printf("AST%s-A%d\n", chip, step)
 
 	var a *ast.AstHandle
-	if chip == "2400" || chip == "2500" {
+	if chip == "2400" || chip == "2500" || chip == "2600" {
 		a = ast.New()
 	}
 

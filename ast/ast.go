@@ -18,14 +18,14 @@ type AstHandle struct {
 	lpc      pmem.Region
 	dram     pmem.Region
 	mac      [2]pmem.Region
-	Ast2500  bool
+	Family   int
 	ThisIsMe bool // true if program is running on AST itself
 }
 
 func New() *AstHandle {
 	var a AstHandle
 	a.scu = Map("scu", SCU_ADDR, true, 4096)
-	a.Ast2500 = isAst2500(a.scu)
+	a.Family = AstFamily(a.scu)
 	a.wdt = Map("wdt", WDT_ADDR, true, 4096)
 	a.I2c = Map("i2c", I2C_ADDR, true, 4096)
 	a.lpc = Map("lpc", LPC_ADDR, true, 4096)
@@ -43,18 +43,22 @@ func (a *AstHandle) Dram() pmem.Region {
 	return a.dram
 }
 
-func isAst2500(scu pmem.Region) (ast2500 bool) {
-
-	astId := scu.Read32(SCU_REVID)
+func AstFamily(scu pmem.Region) int {
+	astId := scu.Read32(0x4)
+	if astId>>24 != 0x05 {
+		astId = scu.Read32(SCU_REVID)
+	}
 	switch astId &^ 0x0f0000 {
 	case 0x02000303:
-		ast2500 = false
+		return 24
 	case 0x04000303:
-		ast2500 = true
+		return 25
+	case 0x05000303:
+		return 26
 	default:
 		log.Fatalf("Don't know how to reset chip with id: 0x%08x\n", astId)
 	}
-	return
+	return 0
 }
 
 type AstPrevState struct {
@@ -64,8 +68,11 @@ type AstPrevState struct {
 
 // Return a bitmask of which i2c busses have their pin enabled.
 func (a *AstHandle) I2cEnabledSet() uint32 {
+	if a.Family == 26 {
+		return (1 << 3) + (1 << 2)
+	}
 	i2cEnabled := (a.scu.Read32(0x90) & 0xfff0000) >> 14
-	if a.Ast2500 {
+	if a.Family >= 25 {
 		scuA4 := a.scu.Read32(0xA4)
 		i2cEnabled |= (scuA4&0x8000)>>14 + (scuA4&0x2000)>>13
 	} else {
@@ -74,12 +81,32 @@ func (a *AstHandle) I2cEnabledSet() uint32 {
 	return i2cEnabled
 }
 
-func I2cBase(i int) (base int64) {
-	base = int64(i*0x40 + 0x40)
-	if i >= 7 {
-		base = int64((i-7)*0x40 + 0x300)
+func (a *AstHandle) I2cBase(i int) (base int64) {
+	off := 0x40
+	if a.Family >= 26 {
+		off = 0x80
+	}
+	base = int64(i*off + off)
+	if i >= 7 && a.Family <= 25 {
+		base = int64((i-7)*off + 0x300)
 	}
 	return
+}
+
+func (a *AstHandle) WDTn(i int, off int, val uint32) {
+	if !(i >= 1 && i <= 3) {
+		log.Fatalf("Invalid WDT:%d\n", i)
+	}
+	i -= 1
+	inc := 0x20
+	if a.Family >= 26 {
+		inc = 0x40
+	}
+	a.wdt.Write32(int64(inc*i+off), val)
+}
+
+func (a *AstHandle) WDTctl(i int, val uint32) {
+	a.WDTn(i, 0xc, val)
 }
 
 // Only supports AST2400 and AST2500
@@ -89,32 +116,38 @@ func (a *AstHandle) AstStop() (prev AstPrevState) {
 	}
 	log.Printf("Stopping AST\n")
 	scu := a.scu
-	wdt := a.wdt
 
 	scu.Write32(0, 0x1688a8a8)
 	_ = scu.Read32(0x70)
-	prev.wdt2Prev = wdt.Read32(0x2c)
-	wdt.Write32(0xc, 0)  //dis WDT1
-	wdt.Write32(0x2c, 0) //dis WDT2
-	if a.Ast2500 {
-		wdt.Write32(0x4c, 0) //dis WDT3
+	if a.Family <= 25 {
+		prev.wdt2Prev = a.wdt.Read32(0x2c)
 	}
-	prev.rst70State = scu.Read32(0x70)
-	scu.Write32(0x70, prev.rst70State|3) // dis cpu
-	wdt.Write32(0xc, 0)                  //dis WDT1
-	wdt.Write32(0x2c, 0)                 //dis WDT2
-	wdt.Write32(0x34, 1)                 // clr WDT2 timeout/2nd boot status
+	a.WDTctl(1, 0) //dis WDT1
+	a.WDTctl(2, 0) //dis WDT2
+	if a.Family >= 25 {
+		a.WDTctl(3, 0) //dis WDT3
+	}
+	if a.Family >= 26 {
+		prev.rst70State = scu.Read32(0x500)
+		scu.Write32(0x500, prev.rst70State|1)
+	} else {
+		prev.rst70State = scu.Read32(0x70)
+		scu.Write32(0x70, prev.rst70State|3) // dis cpu
+	}
+	a.WDTctl(1, 0)     //dis WDT1
+	a.WDTctl(2, 0)     //dis WDT2
+	a.WDTn(2, 0x14, 1) // clr WDT2 timeout/2nd boot status
 
 	_ = scu.Read32(SCU_REVID)
 
-	if a.Ast2500 {
-		wdt.Write32(0x4c, 0) //dis WDT3
-		wdt.Write32(0x54, 1) // clr WDT3 timeout/2nd boot status
+	if a.Family >= 25 {
+		a.WDTctl(3, 0)     //dis WDT3
+		a.WDTn(3, 0x14, 1) // clr WDT3 timeout/2nd boot status
 	}
 	i2cEnabled := a.I2cEnabledSet()
 	i2c := a.I2c
 	for i := 0; i < 14; i++ {
-		base := I2cBase(i)
+		base := a.I2cBase(i)
 		if i2cEnabled&(1<<uint(i)) != 0 && i2c.Read32(base+0) != 0 {
 			i2c.Write32(base+0, 0)
 			i2c.Write32(base+0x14, 0)
@@ -135,14 +168,18 @@ func (a *AstHandle) AstRestart(prev AstPrevState) {
 	wdt := a.wdt
 
 	scu.Write32(0, 0x1688a8a8)
-	if a.Ast2500 {
+	if a.Family == 25 {
 		scu.Write32(0x7c, 0x3001) // disable-spi, enable-cpu-boot
 		scu.Write32(0x70, 0x1000) // enable spi-master
-	} else {
+	} else if a.Family == 24 {
 		scu.Write32(0x70, prev.rst70State)
+	} else if a.Family == 26 {
+		log.Printf("scu500 := 0x%x\n", prev.rst70State)
+		scu.Write32(0x500, prev.rst70State)
+		scu.Write32(0x504, 1)
 	}
 
-	if a.Ast2500 {
+	if a.Family == 25 {
 		_ = wdt.Read32(0x1c)
 		resetMask := uint32(0x033fdff3)
 		if LpcReset {
@@ -150,16 +187,28 @@ func (a *AstHandle) AstRestart(prev AstPrevState) {
 		}
 		log.Printf("ResetMask=0x%08x\n", resetMask)
 		wdt.Write32(0x1c, resetMask) // reset-mask
+	} else if a.Family == 26 {
+		_ = wdt.Read32(0x1c)
+		resetMask := uint32(0x030f1ff1)
+		if LpcReset {
+			resetMask |= 0x00002000
+		}
+		log.Printf("ResetMask=0x%08x\n", resetMask)
+		wdt.Write32(0x1c, resetMask) // reset-mask
+		wdt.Write32(0x20, 0x03ffff1) // reset-mask
+
 	}
-	wdt.Write32(0x2c, prev.wdt2Prev)
-	wdt.Write32(0x4, 0x10)   // WDT1 reload-value = 0x10
-	wdt.Write32(0x8, 0x4755) // restart WDT1
+	if a.Family <= 25 {
+		a.WDTctl(2, prev.wdt2Prev)
+	}
+	a.WDTn(1, 0x4, 0x10) // WDT1 reload-value = 0x10
 	if SocReset {
 		wdt.Write32(0xc, 0x33) // soc-reset + enable-signal + reset-system at timeout
 
 	} else {
 		wdt.Write32(0xc, 0x13) // enable-signal + reset-system at timeout
 	}
+	a.WDTn(1, 0x8, 0x4755) // restart WDT1
 }
 
 func (a *AstHandle) AstReset() {
@@ -210,14 +259,23 @@ func (a *AstHandle) AstI2c3Disable() {
 }
 
 func AstInfo() (string, int) {
+	var ast2600 bool
 	scu := Map("scu", SCU_ADDR, false, 4096)
-	id := scu.Read32(SCU_REVID)
+	id := scu.Read32(4)
+	if id>>24 != 0x05 {
+		id = scu.Read32(SCU_REVID)
+	} else {
+		ast2600 = true
+		id = scu.Read32(0x14)
+	}
 	fmt.Printf("ast silicon rev id:0x%08x\n", id)
 	step := (id >> 16) & 0xff
-	if step == 3 {
-		step = 2
-	} else if step == 2 {
-		step = 99
+	if !ast2600 {
+		if step == 3 {
+			step = 2
+		} else if step == 2 {
+			step = 99
+		}
 	}
 	id &^= 0xff0000
 	var s string
@@ -232,6 +290,8 @@ func AstInfo() (string, int) {
 		s = "2520"
 	case 0x04000403:
 		s = "2530"
+	case 0x05000303:
+		s = "2600"
 	default:
 		s = "-unknown-"
 	}
@@ -273,8 +333,8 @@ var spiRegs = ParseRegs(spiReg)
 
 func (a *AstHandle) SpiInfo() {
 	spi := Map("fmc", FMC_ADDR, true, 4096)
-	if !a.Ast2500 {
-		log.Printf("Only accept AST2500\n")
+	if a.Family != 25 && a.Family != 26 {
+		log.Printf("Only accept AST2[56]00\n")
 		return
 	}
 	//fmt.Printf("spiid = 0x%06x\n", fmc.spiId())

@@ -64,7 +64,7 @@ func (i *i2cBus) SetSpeed(f physic.Frequency) error {
 }
 
 func (a *AstHandle) I2cDev(busno, slave int) i2c.Dev {
-	bus := &i2cBus{m: a.I2c, bus: busno, base: I2cBase(busno)}
+	bus := &i2cBus{m: a.I2c, bus: busno, base: a.I2cBase(busno)}
 	if bus.m.Read32(bus.base+0x14) != 0x0a060000 {
 		bus.m.Write32(bus.base+0x14, 1<<11)
 		time.Sleep(50 * time.Millisecond)
