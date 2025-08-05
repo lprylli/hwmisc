@@ -196,6 +196,7 @@ func (f *Fmc) Write(off64 int64, buf []byte) {
 
 var spiDb = map[uint32]spiChip{
 	0xc22019: {"mx25l25635f", 32 * 1024 * 1024, 64 * 1024, true, true},
+	0xef4019: {"w25q256", 32 * 1024 * 1024, 64 * 1024, true, false},
 	0x20ba20: {"n25q512a", 64 * 1024 * 1024, 64 * 1024, true, true},
 	0xc2201a: {"mx66l51235l", 64 * 1024 * 1024, 64 * 1024, true, true},
 	0x010220: {"s25fl512s", 64 * 1024 * 1024, 256 * 1024, true, false},
@@ -209,6 +210,9 @@ func (f *Fmc) is4B() bool {
 	case f.id == 0x010220:
 		buf := f.spiXfer([]byte{BRRD}, 4)
 		return buf[0]&0x80 != 0
+	case f.id == 0xef4019:
+		buf := f.spiXfer([]byte{RDCR}, 4)
+		return buf[0]&0x1 != 0
 	case f.Chip.mx3b4b:
 		buf := f.spiXfer([]byte{RDCR}, 4)
 		return buf[0]&0x20 != 0
@@ -232,9 +236,9 @@ func (a *AstHandle) FmcNew() *Fmc {
 	} else {
 		fmc.Chip = chip
 	}
-	stat := fmc.spiStatus()
+	stat := fmc.spiStatus() &^ 0x40
 	if stat&^2 != 0 {
-		log.Fatalf("SpiStatus:0x%02x\n", stat)
+		log.Fatalf("SpiStatus:0x%02x (spiid==0x%06x)\n", stat, fmc.id)
 	}
 	if stat&2 != 0 {
 		fmc.writeDisable()
