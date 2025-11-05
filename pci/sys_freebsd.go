@@ -21,23 +21,17 @@ type PciDev struct {
 	sel struct_pcisel
 }
 
-func Scan() *World {
-	var w World
-	var req struct_pci_conf_io
-	var array [2048]struct_pci_conf
+func fbsd14Scan(w *World) {
+	var req struct_pci_conf_io14
+	var array [2048]struct_pci_conf14
 
 	req.match_buf_len = uint32(binary.Size(array))
 	req.matches = &array[0]
-	f, err := os.OpenFile("/dev/pci", os.O_RDWR, 0666)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	w.fd = f
 
 	_, _, errno := syscall.Syscall(
 		syscall.SYS_IOCTL,
-		uintptr(f.Fd()),
-		uintptr(PCIOCGETCONF),
+		uintptr(w.fd.Fd()),
+		uintptr(PCIOCGETCONF_14),
 		uintptr(unsafe.Pointer(&req)),
 	)
 	if errno != 0 {
@@ -57,6 +51,52 @@ func Scan() *World {
 		d.sel = p.pc_sel
 		w.AddDev(d)
 	}
+}
+
+func fbsdCurrentScan(w *World) {
+	var req struct_pci_conf_io
+	var array [2048]struct_pci_conf
+
+	req.match_buf_len = uint32(binary.Size(array))
+	req.matches = &array[0]
+
+	_, _, errno := syscall.Syscall(
+		syscall.SYS_IOCTL,
+		uintptr(w.fd.Fd()),
+		uintptr(PCIOCGETCONF),
+		uintptr(unsafe.Pointer(&req)),
+	)
+	if errno == 25 { // ENOTTY, likely fbsd <= 14.x
+		fbsd14Scan(w)
+		return
+	}
+	if errno != 0 {
+		log.Fatalf("PCIOCGETCONF returns error %d\n", errno)
+	}
+	if req.status != PCI_GETCONF_LAST_DEVICE {
+		log.Fatalf("PCIOCGETCONF.status=%d", req.status)
+	}
+	// log.Printf("matches:%d", req.num_matches)
+	for i := 0; i < int(req.num_matches); i++ {
+		p := &array[i]
+		d := &PciDev{}
+		d.domain = int(p.pc_sel.pc_domain)
+		d.bus = int(p.pc_sel.pc_bus)
+		d.devFn = int(p.pc_sel.pc_dev)*8 + int(p.pc_sel.pc_func)
+		d.Name = fmt.Sprintf("%04x:%02x:%02x.%x", d.domain, d.bus, d.devFn/8, d.devFn%8)
+		d.sel = p.pc_sel
+		w.AddDev(d)
+	}
+}
+
+func Scan() *World {
+	var w World
+	f, err := os.OpenFile("/dev/pci", os.O_RDWR, 0666)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	w.fd = f
+	fbsdCurrentScan(&w)
 	return &w
 }
 

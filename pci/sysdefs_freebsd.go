@@ -20,7 +20,7 @@ type _Ctype_pci_getconf_flags uint32
 
 type _Ctype_pci_getconf_status uint32
 
-type struct_pci_conf struct {
+type struct_pci_conf14 struct {
 	pc_sel       struct_pcisel
 	pc_hdr       _Ctype_u_int8_t
 	pc_subvendor _Ctype_u_int16_t
@@ -35,6 +35,24 @@ type struct_pci_conf struct {
 	pd_unit      _Ctype_u_long
 }
 
+type struct_pci_conf struct {
+	pc_sel          struct_pcisel
+	pc_hdr          _Ctype_u_int8_t
+	pc_subvendor    _Ctype_u_int16_t
+	pc_subdevice    _Ctype_u_int16_t
+	pc_vendor       _Ctype_u_int16_t
+	pc_device       _Ctype_u_int16_t
+	pc_class        _Ctype_u_int8_t
+	pc_subclass     _Ctype_u_int8_t
+	pc_progif       _Ctype_u_int8_t
+	pc_revid        _Ctype_u_int8_t
+	pd_name         [17]_Ctype_char
+	pd_unit         _Ctype_u_long
+	pd_numa_domain  int32
+	pc_reported_len uint64
+	pc_spare        [64]int8
+}
+
 type struct_pci_conf_io struct {
 	pat_buf_len   _Ctype_u_int32_t
 	num_patterns  _Ctype_u_int32_t
@@ -42,6 +60,19 @@ type struct_pci_conf_io struct {
 	match_buf_len _Ctype_u_int32_t
 	num_matches   _Ctype_u_int32_t
 	matches       *struct_pci_conf
+	offset        _Ctype_u_int32_t
+	generation    _Ctype_u_int32_t
+	status        _Ctype_pci_getconf_status
+	_             [4]byte
+}
+
+type struct_pci_conf_io14 struct {
+	pat_buf_len   _Ctype_u_int32_t
+	num_patterns  _Ctype_u_int32_t
+	patterns      *struct_pci_match_conf
+	match_buf_len _Ctype_u_int32_t
+	num_matches   _Ctype_u_int32_t
+	matches       *struct_pci_conf14
 	offset        _Ctype_u_int32_t
 	generation    _Ctype_u_int32_t
 	status        _Ctype_pci_getconf_status
@@ -90,7 +121,8 @@ type _Ctype_ushort uint16
 
 type _Ctype_void [0]byte
 
-const PCIOCGETCONF = 0xc0307005
+const PCIOCGETCONF_14 = 0xc0307005
+const PCIOCGETCONF = 0xc030700a
 const PCIOCREAD = 0xc0147002
 const PCIOCWRITE = 0xc0147003
 const PCI_GETCONF_LAST_DEVICE = 0x0
